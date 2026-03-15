@@ -1,0 +1,22 @@
+# Raw data — too large for GitHub
+data/raw/
+data/processed/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Environment/secret files — never push passwords
+.env
+*.env
+
+# Windows system files
+Thumbs.db
+desktop.ini
+
+# VS Code settings
+.vscode/
