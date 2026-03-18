@@ -89,3 +89,22 @@ SELECT
 FROM rfm_segments
 GROUP BY segment
 ORDER BY total_revenue DESC;
+-- ============================================================
+-- QUERY 6: Product Affinity for At Risk Customers
+-- What did At Risk customers buy most?
+-- ============================================================
+SELECT
+    p.description,
+    f.stock_code,
+    COUNT(DISTINCT f.customer_id)            AS at_risk_customers,
+    COUNT(DISTINCT f.invoice)                AS total_orders,
+    SUM(f.quantity)                          AS total_units,
+    ROUND(SUM(f.revenue), 2)                 AS total_revenue,
+    ROUND(AVG(f.price), 2)                   AS avg_price
+FROM fact_sales f
+JOIN dim_product p ON f.stock_code = p.stock_code
+JOIN rfm_segments r ON f.customer_id = r.customer_id
+WHERE r.segment = 'At Risk'
+GROUP BY f.stock_code, p.description
+ORDER BY total_revenue DESC
+LIMIT 15;
