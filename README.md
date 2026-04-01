@@ -246,25 +246,25 @@ Schema DDL in `sql/schema_ddl.sql`.
 
 KPIs: £17,374,804.25 total revenue, 5,878 customers, 36,969 orders, £469.98 AOV. Monthly revenue trend with Q4 peaks annotated. Revenue by country bar chart (43 countries).
 
-![Executive Revenue Overview](reports/dashboard_page1_executive_revenue_overview.png)
+![Executive Revenue Overview](reports/figures/dashboard_page1_executive_revenue_overview.png)
 
 ### Page 2 — Customer Loyalty & RFM Segmentation Deep-Dive
 
 Customer mix donut chart by segment. Revenue concentration bar chart showing Champions generating £10.3M. Full segment scorecard table: customer count, revenue, avg recency, avg frequency per segment.
 
-![Customer Loyalty & RFM Segmentation](reports/dashboard_page2_customer_loyalty_rfm.png)
+![Customer Loyalty & RFM Segmentation](reports/figures/dashboard_page2_customer_loyalty_rfm.png)
 
 ### Page 3 — 79% Never Return: Retention & Seasonal Trends
 
 KPIs: 21.16% avg Month 1 retention, 35.29% best cohort, 41.33% Q4 monthly revenue uplift, 25 cohorts analysed. Full cohort retention matrix (Month 0–5+). Monthly revenue trend chart with seasonal peak annotation.
 
-![Retention & Seasonal Trends](reports/dashboard_page3_retention_seasonal_trends.png)
+![Retention & Seasonal Trends](reports/figures/dashboard_page3_retention_seasonal_trends.png)
 
 ### Page 4 — Executive Insights & Strategic Roadmap
 
 Prioritised business recommendations with supporting data. Each recommendation is paired with the insight that motivates it, the proposed action, and the quantified value at stake.
 
-![Executive Insights & Strategic Roadmap](reports/dashboard_page4_executive_insights_roadmap.png)
+![Executive Insights & Strategic Roadmap](reports/figures/dashboard_page4_executive_insights_roadmap.png)
 
 ---
 
@@ -398,10 +398,11 @@ CUSTOMER_REVENUE_INTELLIGENCE/
 │   └── 07_statistical_tests.ipynb
 │
 ├── reports/
-│   ├── dashboard_page1_executive_revenue_overview.png
-│   ├── dashboard_page2_customer_loyalty_rfm.png
-│   ├── dashboard_page3_retention_seasonal_trends.png
-│   └── dashboard_page4_executive_insights_roadmap.png
+│   └── figures/
+│       ├── dashboard_page1_executive_revenue_overview.png
+│       ├── dashboard_page2_customer_loyalty_rfm.png
+│       ├── dashboard_page3_retention_seasonal_trends.png
+│       └── dashboard_page4_executive_insights_roadmap.png
 │
 ├── scripts/
 │   └── ingest_to_mysql.py
