@@ -1,0 +1,96 @@
+name: ETL Pipeline
+
+# Runs the clean -> quality gate -> load pipeline against the Supabase
+# Postgres warehouse. The quality-gate job blocks the load job via
+# `needs:` — if any check fails, load never runs.
+#
+# Trigger reasoning: the underlying dataset (UCI Online Retail II) is a
+# static historical snapshot, so this doesn't need to run hourly. The
+# weekly schedule + manual dispatch exist to demonstrate a real
+# orchestration/scheduling setup rather than to track live data change.
+
+on:
+  schedule:
+    - cron: "0 3 * * 1" # Every Monday, 03:00 UTC
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "scripts/clean_data.py"
+      - "scripts/data_quality_gate.py"
+      - "scripts/load_to_supabase.py"
+      - "sql/schema_ddl_postgres.sql"
+      - "sql/compute_rfm.sql"
+      - ".github/workflows/etl_pipeline.yml"
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Clean data (download raw + produce clean/guest CSVs)
+        run: python scripts/clean_data.py
+
+      - name: Upload cleaned data artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cleaned-data
+          path: data/processed/
+          retention-days: 7
+
+  quality-gate:
+    needs: clean
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download cleaned data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cleaned-data
+          path: data/processed/
+
+      - name: Run data quality gate
+        run: python scripts/data_quality_gate.py
+
+  load:
+    needs: quality-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download cleaned data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cleaned-data
+          path: data/processed/
+
+      - name: Load to Supabase Postgres + compute RFM in SQL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/load_to_supabase.py
