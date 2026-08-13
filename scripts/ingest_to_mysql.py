@@ -5,20 +5,27 @@
 # Description: Loads clean CSV data into MySQL star schema
 # ============================================================
 
+import os
 import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
 import warnings
 warnings.filterwarnings('ignore')
 
 # ============================================================
 # CONFIGURATION
+# Credentials are read from environment variables (see .env.example).
+# Create a local .env file (gitignored) with your real values —
+# never commit actual credentials.
 # ============================================================
-DB_USER     = "root"
-DB_PASSWORD = "7736"
-DB_HOST     = "localhost"
-DB_PORT     = "3306"
-DB_NAME     = "customer_revenue_intelligence"
+load_dotenv()
+
+DB_USER     = os.environ["DB_USER"]
+DB_PASSWORD = os.environ["DB_PASSWORD"]
+DB_HOST     = os.environ.get("DB_HOST", "localhost")
+DB_PORT     = os.environ.get("DB_PORT", "3306")
+DB_NAME     = os.environ.get("DB_NAME", "customer_revenue_intelligence")
 
 CLEAN_CSV   = r"C:\Customer_Revenue_Intelligence\data\processed\online_retail_clean.csv"
 RFM_CSV     = r"C:\Customer_Revenue_Intelligence\data\processed\rfm_segments.csv"
