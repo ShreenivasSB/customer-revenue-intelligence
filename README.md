@@ -136,7 +136,7 @@ Month-0 to Month-N retention tracked across 25 monthly cohorts (December 2009 �
 
 Historical CLV calculated per customer as the sum of all verified transactions in the dataset period.
 
-**Finding:** Champion average CLV is £25,240 versus Lost customer average CLV of £258 — a 97.8x difference. This is not a prediction; it is a verified historical measurement of what each segment actually spent.
+**Finding:** Champion average CLV is £9,144 versus Lost customer average CLV of £244 — a 37.5x difference. This is not a prediction; it is a verified historical measurement of what each segment actually spent.
 
 ### 4. Revenue Trend & Seasonal Analysis
 
@@ -282,9 +282,11 @@ Prioritised business recommendations with supporting data. Each recommendation i
 
 Q4 monthly revenue is 41.33% higher than non-Q4 months (p=0.003). This effect is volume-driven: more customers, not higher spend per order. Ad spend should scale from late September. Stock replenishment, particularly for high-volume low-cost items, should complete by October 1 to prevent fulfilment failure at peak.
 
-### 4. Protect the Top 587 Champions — £11.86M Revenue at Stake
+### 4. Protect the 1,297 Champions — £11.86M Revenue at Stake
 
-The top 587 customers (10% of the base) account for 63.9% of revenue. Champion average CLV is £25,240 versus £258 for Lost customers. A VIP loyalty tier — early sale access, free shipping, dedicated account support for the top 50 — directly protects £11.86M in high-value revenue from potential churn. Champions should never be treated like new customers.
+Champions (22.07% of customers, 1,297 people) generate 68.26% of revenue. Champion average CLV is £9,144 versus £244 for Lost customers. A VIP loyalty tier — early sale access, free shipping, dedicated account support for the top 50 — directly protects £11.86M in Champion segment revenue from potential churn. Champions should never be treated like new customers.
+
+*(Separately, the top 10% of customers by revenue — 587 people, not the same group as the Champions segment — generate 63.9% of total revenue; see notebook 05's Pareto analysis.)*
 
 ### 5. Convert Guest Checkouts to Accounts — £645,907 Trackable Revenue
 
@@ -301,7 +303,7 @@ The top 587 customers (10% of the base) account for 63.9% of revenue. Champion a
 - **Average Month 1 retention: 21.16%** across all 25 cohorts analysed
 - **Best cohort retention: 35.29%** (December 2009) — **Worst: 9.21%** (December 2010)
 - **Q4 monthly revenue is 41.33% higher** than non-Q4 (p=0.003) — but AOV difference is not significant (p=0.661), confirming this is a volume effect
-- **Champion avg CLV: £25,240** vs **Lost avg CLV: £258** — a **97.8x difference**
+- **Champion avg CLV: £9,144** vs **Lost avg CLV: £244** — a **37.5x difference**
 - **Non-UK customers place £441 larger orders** than UK customers (p~0.000)
 - **21.43% of products** generate **80% of revenue** — product-level Pareto confirmed
 
