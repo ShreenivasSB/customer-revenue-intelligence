@@ -83,6 +83,17 @@ def clean(df_raw):
     """
     summary = {"raw_rows": len(df_raw)}
 
+    # Normalize StockCode casing. The raw dataset has ~171 case-variant
+    # "duplicates" (e.g. "85123A" vs "85123a") that are the same product
+    # with identical descriptions — just inconsistent data entry. Left
+    # unnormalized, dim_product ends up with two distinct primary keys
+    # for one product, which silently fragments its revenue across two
+    # rows in any stock_code-level aggregation, and also collides with
+    # Power BI's case-insensitive relationship-key comparison even
+    # though Postgres treats them as valid distinct primary keys.
+    df_raw = df_raw.copy()
+    df_raw["StockCode"] = df_raw["StockCode"].astype(str).str.upper()
+
     # ---- Guest checkout stream ----
     guest_df = df_raw[df_raw["Customer ID"].isnull()].copy()
     guest_df = guest_df[guest_df["Quantity"] > 0]
