@@ -9,7 +9,7 @@
 
 > **End-to-end customer analytics system** that processes 1M+ UK e-commerce transactions, segments 5,878 customers by revenue potential, models time-to-churn with survival analysis, and surfaces £982K in immediately recoverable revenue — delivered through an automated GitHub Actions pipeline into a cloud Postgres warehouse and a 4-page executive Power BI dashboard.
 
-📊 **[Live Dashboard → View on NovyPro](https://www.novypro.com/create_project/customer-revenue-intelligence--retention-analytics-system)**
+📊 **[Live Dashboard → View on Power BI](https://app.powerbi.com/view?r=eyJrIjoiODBhZWIyMjUtMDk1NS00MjYyLThiM2MtMDEwYjI5MTVkYzIzIiwidCI6ImRiMTljMjFjLWFlODctNDY4Yi05MjQ4LTFhMjkyZDM3OWRjMiJ9)**
 
 ---
 
@@ -88,7 +88,7 @@ The project runs two parallel tracks from the same raw dataset: a **local explor
                            4-page executive dashboard
                                             │
                                             ▼
-                           NovyPro — live hosted dashboard
+                           Power BI Service — live hosted dashboard
 ```
 
 ---
@@ -345,7 +345,7 @@ Two real troubleshooting stories worth knowing for an interview follow-up, not s
 
 ## 📈 Power BI Dashboard
 
-4-page executive dashboard built in Power BI Desktop, hosted on NovyPro, connected to the Supabase warehouse via ODBC (see the connectivity note above).
+4-page executive dashboard built in Power BI Desktop, published to Power BI Service, connected to the Supabase warehouse via ODBC (see the connectivity note above).
 
 ### Page 1 — Executive Revenue Overview
 
@@ -570,7 +570,7 @@ CUSTOMER_REVENUE_INTELLIGENCE/
 | psycopg2-binary | 2.9.9 | Postgres driver |
 | GitHub Actions | — | CI/CD orchestration — scheduled + manual + push-triggered ETL pipeline |
 | Power BI Desktop | Latest | 4-page executive dashboard; connects to Supabase via psqlODBC |
-| NovyPro | — | Live dashboard hosting |
+| Power BI Service | — | Live dashboard hosting (publish to web) |
 | GitHub | — | Version control |
 
 ---
