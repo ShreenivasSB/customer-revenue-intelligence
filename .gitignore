@@ -13,6 +13,10 @@ __pycache__/
 # Environment/secret files — never push passwords
 .env
 *.env
+**/.streamlit/secrets.toml
+
+# Browser automation scratch artifacts
+.playwright-mcp/
 
 # Windows system files
 Thumbs.db
