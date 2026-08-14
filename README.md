@@ -2,10 +2,12 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10-blue?logo=python&logoColor=white)
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-orange?logo=mysql&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-Postgres-3ECF8E?logo=supabase&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-CI%2FCD-2088FF?logo=githubactions&logoColor=white)
 ![Power BI](https://img.shields.io/badge/Power%20BI-Desktop-yellow?logo=powerbi&logoColor=white)
 ![GitHub](https://img.shields.io/badge/GitHub-Version%20Control-black?logo=github&logoColor=white)
 
-> **End-to-end customer analytics system** that processes 1M+ UK e-commerce transactions, segments 5,878 customers by revenue potential, and surfaces £982K in immediately recoverable revenue — delivered through a 4-page executive Power BI dashboard.
+> **End-to-end customer analytics system** that processes 1M+ UK e-commerce transactions, segments 5,878 customers by revenue potential, models time-to-churn with survival analysis, and surfaces £982K in immediately recoverable revenue — delivered through an automated GitHub Actions pipeline into a cloud Postgres warehouse and a 4-page executive Power BI dashboard.
 
 📊 **[Live Dashboard → View on NovyPro](https://www.novypro.com/create_project/customer-revenue-intelligence--retention-analytics-system)**
 
@@ -18,10 +20,10 @@ A UK-based online retailer operating across 43 countries had no systematic under
 The core questions this project answers:
 
 - Which customers account for a disproportionate share of revenue — and are they at risk?
-- What is the true scale of the one-time buyer problem?
+- What is the true scale of the one-time buyer problem, and *when* is a customer likely to lapse?
 - Is the Q4 revenue spike real and statistically defensible — or noise?
 - Where is untracked revenue hiding, and what is its magnitude?
-- What are the top five actions the business should take *next week*?
+- What are the top actions the business should take *next week*?
 
 **Stakeholder:** E-commerce leadership team and revenue operations function. Every finding in this analysis is accompanied by an exact monetary value and a proposed action with a quantified return.
 
@@ -43,39 +45,50 @@ The core questions this project answers:
 
 **Key columns:** InvoiceNo, StockCode, Description, Quantity, InvoiceDate, Price, CustomerID, Country
 
+*Note: the 4,630 figure above is products sold to identified customers. The warehouse's `dim_product` table holds 4,744 stock codes — that count is a union with products that only ever appear in guest checkout orders. See [Data Warehouse](#data-warehouse).*
+
 ---
 
 ## 🏗️ Project Architecture
 
+The project runs two parallel tracks from the same raw dataset: a **local exploratory track** (notebooks, manual, used to prototype every technique and produce the SQL practice warehouse) and an **automated production track** (scripts + GitHub Actions, scheduled, feeds the live dashboard).
+
 ```
-Raw CSV (1,067,371 rows)
-        │
-        ▼
-[01] Data Quality Audit          → 7 issue types identified
-        │
-        ▼
-[02] Data Cleaning (Python)      → 779,407 clean rows + 236,122 guest rows isolated
-        │
-        ├──────────────────────────────────────┐
-        ▼                                      ▼
-[03–07] EDA & Analysis          [Guest Checkout Analysis]
-  - RFM Segmentation             - £3,229,538.96 unattributed
-  - Cohort Retention             - 98.8% UK-based
-  - CLV Profiling                - Avg item: £13.68
-  - Revenue Trends
-  - Statistical Tests (5 total)
-        │
-        ▼
-[ingest_to_mysql.py]             → SQLAlchemy ingestion script
-        │
-        ▼
-MySQL 8.0 Star Schema            → 5 tables, 20 SQL queries
-        │
-        ▼
-Power BI Desktop                 → 4-page executive dashboard
-        │
-        ▼
-NovyPro                          → Live hosted dashboard
+                    ┌───────────────────────────────────┐
+                    │   Raw CSV — UCI Online Retail II    │
+                    │   1,067,371 rows                    │
+                    └──────────────────┬───────────────────┘
+                                        │
+              ┌─────────────────────────┴──────────────────────────┐
+              ▼                                                      ▼
+  LOCAL EXPLORATORY TRACK                               AUTOMATED PRODUCTION TRACK
+  (Jupyter notebooks, run manually)                     (scripts/ + GitHub Actions, scheduled)
+              │                                                      │
+  01 Data Quality Audit                                  scripts/clean_data.py
+  02 Data Cleaning        ──► MySQL 8.0                  (same cleaning rules,
+  03 RFM (pandas pd.qcut)      local warehouse             unattended)
+  04 Cohort Retention          (ingest_to_mysql.py)               │
+  05 Revenue Trends                                                ▼
+  06 CLV Analysis                                        scripts/data_quality_gate.py
+  07 Statistical Tests                                   17 automated PASS/FAIL checks
+     (Welch's t-test / Shapiro-Wilk /                    (blocks the load job on any FAIL)
+      Levene's / Mann-Whitney U)                                   │
+  08 Survival Analysis                                              ▼
+     (Kaplan-Meier / Cox PH)                             scripts/load_to_supabase.py
+              │                                          → Supabase Postgres (cloud)
+              │                                          → sql/compute_rfm.sql
+              │                                            (RFM via SQL NTILE(5), not pandas)
+              │                                                     │
+              │                        orchestrated by GitHub Actions
+              │                        (weekly cron + manual dispatch + push-triggered)
+              │                                                     │
+              └────────────────────────────┬────────────────────────┘
+                                            ▼
+                           Power BI Desktop (ODBC → Supabase)
+                           4-page executive dashboard
+                                            │
+                                            ▼
+                           NovyPro — live hosted dashboard
 ```
 
 ---
@@ -96,6 +109,8 @@ Before any analysis, a systematic audit of the raw 1,067,371-row dataset identif
 
 The null CustomerID rows were not discarded — they were analysed separately and found to represent £3,229,538.96 in unattributed guest checkout revenue.
 
+An eighth issue surfaced later, via the Power BI repoint to the cloud warehouse rather than the original audit: **~171 case-variant `StockCode` "duplicates"** (e.g. `85123A` vs `85123a`) plus at least one whitespace-variant (`47503J` vs `47503J `) — the same product, split across two primary keys by inconsistent data entry. See the [Data Warehouse](#data-warehouse) engineering note for how this was caught and fixed.
+
 ---
 
 ## 🧹 Data Cleaning
@@ -111,10 +126,37 @@ All cleaning steps were applied sequentially in `notebooks/02_data_cleaning.ipyn
 | 4 | Removed 2,626 zero/negative price rows | 2,626 | 1,007,913 |
 | 5 | Isolated 228,488 null CustomerID rows for separate guest analysis | 228,488 | 779,425 |
 | 6 | Removed 18 near-zero revenue placeholder rows (PADS + bank charges) | 18 | **779,407** |
-| 7 | Engineered `Revenue` column: `Quantity × Price` | — | — |
-| 8 | Converted CustomerID from float64 → int32 | — | — |
+| 7 | Normalised `StockCode` casing/whitespace (`.str.strip().str.upper()`) | — | — |
+| 8 | Engineered `Revenue` column: `Quantity × Price` | — | — |
+| 9 | Converted CustomerID from float64 → int32 | — | — |
 
 **Final clean dataset: 779,407 rows (73.02% of raw)**
+
+This exact waterfall — same rules, same order — is re-implemented as a standalone script, `scripts/clean_data.py`, so it can run unattended. See below.
+
+---
+
+## ⚙️ Automated Data Pipeline
+
+The production track is a real, scheduled ETL pipeline — not a script run by hand. `.github/workflows/etl_pipeline.yml` defines three jobs, each gating the next via `needs:`:
+
+```
+clean  ──►  quality-gate  ──►  load
+```
+
+- **`clean`** — runs `scripts/clean_data.py` (downloads the raw UCI zip if not already present, applies the cleaning waterfall above, writes `online_retail_clean.csv`, `guest_checkout.csv`, and `cleaning_summary.json`), uploads the outputs as a build artifact.
+- **`quality-gate`** — runs `scripts/data_quality_gate.py`, **17 automated PASS/FAIL checks** covering volume sanity bands (row counts, null rates, duplicate rates, cancellation rates within expected ranges), file/summary consistency, key-column completeness, value sanity (no non-positive price/quantity, no sub-penny revenue, no leaked cancellations), revenue totals within a sanity band, and guest-stream integrity. If any check fails, the workflow stops here — `load` never runs.
+- **`load`** — runs `scripts/load_to_supabase.py`: ensures the Postgres schema exists, truncates and reloads all six warehouse tables from the cleaned CSVs, then runs `sql/compute_rfm.sql` to recompute RFM segments **in SQL** via `NTILE(5)` window functions, and verifies row counts.
+
+**Triggers:** a weekly cron (`0 3 * * 1` — every Monday, 03:00 UTC), `workflow_dispatch` for on-demand manual runs, and a push trigger scoped to the pipeline's own files. The dataset itself is a static historical snapshot, so the schedule exists to demonstrate real orchestration rather than to track live data drift — an honest distinction worth stating outright in an interview rather than implying the data changes daily.
+
+Every load is idempotent (truncate + reinsert), so re-running on a schedule against unchanged source data is always safe.
+
+**Verified end-to-end, run twice on `main`:**
+
+![Pipeline job graph — clean, quality-gate, load all green](reports/figures/pipeline_run_jobs.png)
+
+![Pipeline run history — two successful runs on main](reports/figures/pipeline_run_history.png)
 
 ---
 
@@ -126,17 +168,23 @@ Customers scored on Recency, Frequency, and Monetary value using NTILE quintiles
 
 **Finding:** Champions (22.07% of customers) generate 68.26% of total revenue. The top two segments combined — Champions and Loyal Customers (32% of the base) — produce 80.23% of revenue. Pareto holds, and the concentration is even more extreme than the 80/20 rule would predict.
 
+![RFM customer segments — recency vs monetary, bubble size = frequency](reports/figures/rfm_scatter.png)
+
 ### 2. Cohort Retention Analysis
 
 Month-0 to Month-N retention tracked across 25 monthly cohorts (December 2009 – December 2011).
 
 **Finding:** 79% of customers never return after their first purchase. Average Month 1 retention across all 25 cohorts is 21.16%. The best-performing cohort (December 2009) retained 35.29% of customers into Month 1; the worst (December 2010) retained only 9.21%.
 
+![Cohort retention heatmap — % of cohort returning each month](reports/figures/cohort_retention_heatmap.png)
+
 ### 3. Customer Lifetime Value (CLV) Profiling
 
 Historical CLV calculated per customer as the sum of all verified transactions in the dataset period.
 
 **Finding:** Champion average CLV is £9,144 versus Lost customer average CLV of £244 — a 37.5x difference. This is not a prediction; it is a verified historical measurement of what each segment actually spent.
+
+![CLV distribution and average CLV by segment](reports/figures/clv_analysis.png)
 
 ### 4. Revenue Trend & Seasonal Analysis
 
@@ -152,9 +200,11 @@ Revenue broken down by country, with UK vs non-UK order value compared statistic
 
 ### 6. Product Revenue Analysis
 
-Products ranked by total revenue contribution; Pareto threshold identified.
+Products ranked by total revenue contribution; Pareto threshold identified — both at the customer and product level.
 
-**Finding:** 21.43% of products generate 80% of total revenue — product-level Pareto confirmed. The top-performing single product is REGENCY CAKESTAND 3 TIER at £277,656 in total revenue.
+**Finding:** 21.43% of products generate 80% of total revenue — product-level Pareto confirmed. At the individual customer level (a finer cut than the RFM segment concentration in Finding #1), 23.04% of customers generate 80% of revenue. The top-performing single product is REGENCY CAKESTAND 3 TIER at £277,656 in total revenue.
+
+![Pareto analysis — customers and products](reports/figures/pareto_analysis.png)
 
 ### 7. At-Risk Customer Recovery Analysis
 
@@ -166,7 +216,39 @@ Products ranked by total revenue contribution; Pareto threshold identified.
 
 228,488 null-CustomerID rows isolated and analysed separately as an untracked revenue stream.
 
-**Finding:** 236,122 valid guest checkout rows represent £3,229,538.96 in revenue — 98.8% UK-based, with an average order item value of £13.68. This revenue is real and completely unattributed to any customer record.
+**Finding:** 236,122 valid guest checkout rows represent £3,229,538.96 in revenue — 98.8% UK-based, with an average order item value of £13.68. This revenue is real and completely unattributed to any customer record, and — unlike in the original analysis — is now persisted as a queryable table (`fact_guest_checkout`) in the production warehouse, not just a notebook-only computation.
+
+---
+
+## ⏳ Survival Analysis — Time-to-Churn
+
+`notebooks/08_survival_analysis.ipynb` — Kaplan-Meier and Cox Proportional Hazards, reading directly from the Supabase warehouse. This complements the cohort retention analysis above (Finding #2) with a formal survival-analysis technique: instead of a cohort-by-cohort return-rate table, it models *when* a customer is likely to lapse and *which* customer-level factors raise or lower that risk, producing a per-customer risk score usable for prioritising retention outreach.
+
+**Churn definition** (retail data has no observed "cancellation" event, so churn has to be defined by a business rule, not inferred): a customer is **churned** if more than 180 days have elapsed since their last purchase; otherwise they are **right-censored** — still active as of the dataset's end date, with an unknown future. 180 days was chosen and checked against the recency distribution for a balanced event rate; a shorter, 90-day threshold would have classified over half the base as "churned," which is too aggressive for a non-contractual retail relationship.
+
+Of 5,878 customers: **2,401 churned (40.8%)**, **3,477 still active/censored (59.2%)**. 1,203 customers (20.5%) placed only a single order — consistent with the 79%-never-return finding above.
+
+### Kaplan-Meier — empirical retention decay
+
+Median survival time is **mathematically undefined** within the ~2-year observed window — the survival curve never drops below 50%. Reported honestly as undefined rather than extrapolated: survival probability at the end of the observation window (day 739) is **53.1%**.
+
+![Kaplan-Meier survival curve — overall](reports/figures/survival_km_overall.png)
+
+Stratified by UK vs non-UK (log-rank test): survival at window end is 52.8% (UK, n=5,349) vs 56.2% (non-UK, n=529) — a small gap that is **not statistically significant** (log-rank p=0.348). Absence of a country effect is reported as a real finding, not omitted.
+
+![Kaplan-Meier survival curve — UK vs non-UK](reports/figures/survival_km_country.png)
+
+### Cox Proportional Hazards — what drives churn risk
+
+Covariates: `total_orders` (order frequency, log-transformed) and `avg_order_value` (spend per order) — not `total_revenue`, since revenue is just orders × AOV and including all three would be multicollinear. Recency was deliberately excluded, since it's literally how the churn label itself is derived — including it would be circular.
+
+**Finding:** order **frequency** is the dominant, highly significant driver of churn hazard (hazard ratio ≈ 0.07, p<0.001) — a customer with double the order count carries roughly 16% of the churn hazard of a customer with half as many orders. Order **value** (AOV, p=0.43) and **country** (log-rank p=0.35) are not significant predictors once frequency is accounted for. The model's concordance index is **0.87** (0.5 = no better than chance, 1.0 = perfect ranking) — strong discriminative power.
+
+**Reported honestly, not hidden:** the initial model's proportional-hazards assumption check flagged both `total_orders` and `is_uk`. Stratifying `is_uk` (rather than treating it as a regular covariate) fully resolved its violation. Log-transforming `total_orders` did not fully resolve its flag even after remediation — documented in the notebook as very likely the well-known large-sample over-sensitivity of this specific test at n=5,878 (per lifelines' own documentation), rather than pursued further into a harder-to-interpret time-varying-coefficient model. This caveat is itself persisted as a queryable row in `survival_model_summary`, not left as prose only.
+
+**Persisted to Supabase** (`sql/survival_schema.sql`, refreshed by re-running the notebook — kept separate from the core star schema since this isn't part of the scheduled ETL pipeline):
+- `survival_customer_features` — 5,878 rows: per-customer duration, churn event flag, covariates, and Cox partial hazard risk score.
+- `survival_model_summary` — 13 rows: Kaplan-Meier, log-rank, and Cox metrics, plus the PH-assumption caveat as queryable text.
 
 ---
 
@@ -186,63 +268,84 @@ Two honest results worth calling out explicitly:
 - **Q4 AOV** is reported as not significant either way — the business interpretation holds regardless: Q4 success (where it exists) comes from more customers buying, not from the same customers spending more.
 - **Q4 monthly revenue volume** changed verdict under the corrected test — this is the one place where fixing the statistical methodology actually changed the conclusion, not just its confidence. The original notebook used Student's t-test, which assumes equal variance between groups; Levene's test shows that assumption doesn't hold here, so its p=0.003 significant result wasn't trustworthy. Welch's t-test corrects for that and lands at p=0.052 — just above the conventional 0.05 threshold. The 41.33% observed Q4 premium is real in this dataset, but statistically we can't rule out it's due to chance with only 7 Q4 months to compare against 18 non-Q4 months.
 
+Chi-square (RFM segment distribution) is left as Student's — it's a different test family entirely, not a t-test, so the Welch's/Shapiro-Wilk/Levene's upgrade doesn't apply to it.
+
 ---
 
-## 🗄️ MySQL Star Schema
+## 🗄️ Data Warehouse
 
-Database built in MySQL 8.0 using a star schema optimised for analytical query performance. Ingested via `scripts/ingest_to_mysql.py` using SQLAlchemy.
+The project runs two warehouses side by side, deliberately: **MySQL locally** (the original build, kept as the SQL-practice/demonstration layer behind the 21 queries below) and **Supabase Postgres in the cloud** (the production warehouse the automated pipeline and the live dashboard actually run against).
 
-| Table | Type | Rows | Description |
-|---|---|---|---|
-| `dim_customer` | Dimension | 5,878 | One row per unique customer; CustomerID, country |
-| `dim_product` | Dimension | 4,630 | One row per unique product; StockCode, description |
-| `dim_date` | Dimension | 604 | One row per unique date; year, month, quarter, day-of-week |
-| `fact_sales` | Fact | 779,407 | All clean transaction rows; revenue, quantity, foreign keys |
-| `rfm_segments` | Derived | 5,878 | RFM scores and segment labels per customer |
+### Local — MySQL 8.0
 
-Schema DDL in `sql/schema_ddl.sql`.
+Schema in `sql/schema_ddl.sql`. Ingested via `scripts/ingest_to_mysql.py` (SQLAlchemy). Five tables: `dim_customer`, `dim_product`, `dim_date`, `fact_sales`, `rfm_segments` (the last populated by pandas `pd.qcut` from notebook 03, not SQL). This is the warehouse the 21 SQL queries in the next section are written against.
+
+### Cloud — Supabase Postgres
+
+Schema in `sql/schema_ddl_postgres.sql` (a straight Postgres-dialect port, with explicit FK indexes since Postgres — unlike MySQL — doesn't auto-index foreign keys). Loaded and refreshed by the [Automated Data Pipeline](#automated-data-pipeline) above.
+
+| Table | Rows | Description |
+|---|---|---|
+| `dim_customer` | 5,878 | One row per unique customer; customer_id, country |
+| `dim_product` | 4,744 | Union of stock codes across both identified-customer *and* guest checkout orders |
+| `dim_date` | 604 | One row per unique date; year, month, quarter, day-of-week, is_q4 |
+| `fact_sales` | 779,407 | £17,374,804.25 — all clean transaction rows, identified customers only |
+| `fact_guest_checkout` | 236,122 | £3,229,538.96 — closes the audit's original "guest revenue never persisted" gap |
+| `rfm_segments` | 5,878 | RFM scores and segment labels, computed **in SQL** via `NTILE(5)` (`sql/compute_rfm.sql`) — not pandas |
+
+Plus the two survival-analysis tables described above (`survival_customer_features`, `survival_model_summary`), kept in a separate DDL file since they're refreshed by re-running a notebook, not by the scheduled pipeline.
+
+### Engineering notes
+
+Two real troubleshooting stories worth knowing for an interview follow-up, not smoothed over:
+
+- **A genuine data-quality bug, caught by the BI layer, not the original audit.** The raw dataset has ~171 case-variant `StockCode` values (`85123A` vs `85123a`) plus at least one whitespace-variant, all confirmed to share identical product descriptions — inconsistent data entry, not distinct SKUs. Postgres treats these as valid, distinct, case-sensitive primary keys; MySQL's default collation happened to treat them as equal. Power BI's VertiPaq engine compares relationship keys case-insensitively, so it refused to load the data model against Supabase until this was fixed. Root-caused and fixed by normalising `StockCode` via `.str.strip().str.upper()` in `clean_data.py` — a small, honest example of a downstream tool surfacing an upstream data issue that a purely SQL-side check hadn't caught.
+- **A Power BI ↔ Postgres connectivity workaround.** Power BI Desktop's native `PostgreSQL.Database` connector failed against both Supabase connection hosts with a `remote certificate is invalid` TLS error — an environment-specific bug in the connector's bundled Npgsql driver, not a Supabase or Power BI incompatibility in general (stale root CA store, AV SSL interception, and an outdated Power BI Desktop build were all ruled out). Worked around by installing the official `psqlODBC` driver and connecting through an ODBC DSN (`sslmode=require`) instead. If reconnecting this dashboard on a different machine, try the native connector first.
 
 ---
 
 ## 🔧 SQL Techniques Used
 
-20 queries written across 4 files, covering standard and advanced SQL.
+21 queries written across 4 files against the local MySQL warehouse — covering standard and advanced SQL, and used for hands-on demonstration of CTEs, window functions, and ranking logic.
 
-**`sql/rfm_queries.sql`** — 5 queries
-- RFM score calculation using NTILE(5)
-- Segment label assignment via CASE
-- Segment revenue concentration
-- Segment customer count distribution
-- Top customers by CLV within each segment
+**`sql/rfm_queries.sql`** — 6 queries
+- Customer RFM scores with segment labels
+- Segment distribution — customer count and revenue
+- Champion customers detail
+- At Risk customers — recovery priority list
+- Revenue contribution by segment (Pareto in SQL)
+- Product affinity for At Risk customers
 
 **`sql/revenue_queries.sql`** — 5 queries
-- Monthly revenue aggregation
+- Monthly revenue trend
+- Revenue by country (Top 10)
+- Monthly rolling 3-month average revenue (window function)
 - Q4 vs Non-Q4 revenue comparison
-- Country-level revenue with percent contribution
-- Product revenue ranking using DENSE_RANK
-- Running total of revenue using window SUM
+- Top 10 products by revenue
 
-**`sql/cohort_queries.sql`** — 5 queries
-- First purchase date per customer (CTE)
-- Cohort month assignment
-- Month-N retention rates using LAG
-- Rolling 3-month average retention
-- Cohort size vs retained customer count
+**`sql/cohort_queries.sql`** — 4 queries
+- Customer first purchase month (CTE, cohort assignment)
+- Cohort retention — months active after acquisition
+- Month 1 retention rate per cohort
+- Best and worst retention cohorts (RANK)
 
-**`sql/advanced_queries.sql`** — 5 queries
-- Customer revenue percentile using PERCENT_RANK
-- Revenue contribution using NTILE buckets
-- At Risk segment recovery analysis
-- Product affinity within segment using RANK
-- Guest checkout revenue summary
+**`sql/advanced_queries.sql`** — 6 queries
+- Customer revenue ranking with RANK()
+- Product revenue ranking with DENSE_RANK()
+- Running total revenue by month (window SUM)
+- Customer percentile ranking (PERCENT_RANK, NTILE)
+- Month-over-month revenue growth with LAG()
+- Revenue percent contribution by country
 
-**Techniques applied:** CTEs, Window Functions (RANK, DENSE_RANK, PERCENT_RANK, NTILE), LAG, Rolling Averages, Running Totals, Percent Contribution
+**Techniques applied:** CTEs, Window Functions (RANK, DENSE_RANK, PERCENT_RANK, NTILE), LAG, Rolling Averages, Running Totals, Percent Contribution.
+
+**On the NTILE claim specifically:** these 21 MySQL queries read from an `rfm_segments` table populated by pandas — they don't compute RFM themselves. The actual SQL `NTILE(5)` RFM computation lives in `sql/compute_rfm.sql`, runs against Postgres as part of the production pipeline, and is a direct, verified port of the same segment-assignment rule waterfall used in notebook 03 — see [Data Warehouse](#data-warehouse) and [Automated Data Pipeline](#automated-data-pipeline).
 
 ---
 
 ## 📈 Power BI Dashboard
 
-4-page executive dashboard built in Power BI Desktop, hosted on NovyPro.
+4-page executive dashboard built in Power BI Desktop, hosted on NovyPro, connected to the Supabase warehouse via ODBC (see the connectivity note above).
 
 ### Page 1 — Executive Revenue Overview
 
@@ -294,6 +397,10 @@ Champions (22.07% of customers, 1,297 people) generate 68.26% of revenue. Champi
 
 £3,229,538.96 in revenue is currently unattributed to any customer record. These are 236,122 valid guest checkout transactions — 98.8% from UK customers. A post-checkout prompt offering a 5% future discount for account creation is a low-friction intervention. At 20% conversion, £645,907 becomes attributable, trackable, and eligible for retention campaigns.
 
+### 6. Prioritise Retention Outreach by Cox Churn Risk Score, Not Just Recency
+
+The survival analysis's per-customer Cox partial hazard score (`survival_customer_features.cox_partial_hazard`) ranks all 5,878 customers by relative churn risk, driven overwhelmingly by order frequency (HR≈0.07, concordance 0.87) rather than recency alone. Recommendation #2 above targets customers already 342 days lapsed; this score identifies customers whose *ordering pattern* signals elevated risk before they cross that threshold — a genuinely earlier, more targeted retention trigger than a recency cutoff.
+
 ---
 
 ## 🔑 Key Insights Summary
@@ -308,6 +415,7 @@ Champions (22.07% of customers, 1,297 people) generate 68.26% of revenue. Champi
 - **Champion avg CLV: £9,144** vs **Lost avg CLV: £244** — a **37.5x difference**
 - **Non-UK customers place £441 larger orders** than UK customers (p~0.000)
 - **21.43% of products** generate **80% of revenue** — product-level Pareto confirmed
+- **~41% of customers have crossed the 180-day churn threshold**; order frequency (not order value or country) is the dominant churn-hazard driver (Cox HR≈0.07, concordance 0.87)
 
 ---
 
@@ -316,9 +424,10 @@ Champions (22.07% of customers, 1,297 people) generate 68.26% of revenue. Champi
 ### Prerequisites
 
 - Python 3.10+
-- MySQL 8.0
-- Power BI Desktop
-- Kaggle account (to download the dataset)
+- MySQL 8.0 (optional — only needed for the local SQL-practice track)
+- A free [Supabase](https://supabase.com) account (for the cloud warehouse)
+- Power BI Desktop + the [psqlODBC](https://www.postgresql.org/ftp/odbc/versions/) driver (only if you want to reconnect the dashboard)
+- Kaggle/UCI account (to download the dataset)
 
 ### Step 1 — Clone the repository
 
@@ -333,17 +442,21 @@ cd customer-revenue-intelligence
 pip install -r requirements.txt
 ```
 
-### Step 3 — Download the dataset
+### Step 3 — Configure credentials
 
-Download the UCI Online Retail II dataset from Kaggle and place both Excel files into `data/raw/`.
+```bash
+cp .env.example .env
+```
 
-### Step 4 — Run the notebooks in order
+Fill in your local MySQL credentials (if using the local track) and your Supabase `DATABASE_URL` (use the **session pooler** connection string — see the comments in `.env.example` for why). `.env` is gitignored; never commit real credentials.
+
+### Step 4 — Local exploratory track (notebooks)
 
 ```bash
 jupyter notebook
 ```
 
-Execute notebooks in sequence:
+Execute notebooks in sequence — each builds on the previous one's output:
 1. `01_data_quality_audit.ipynb`
 2. `02_data_cleaning.ipynb`
 3. `03_rfm_segmentation.ipynb`
@@ -351,32 +464,23 @@ Execute notebooks in sequence:
 5. `05_revenue_trends.ipynb`
 6. `06_clv_analysis.ipynb`
 7. `07_statistical_tests.ipynb`
+8. `08_survival_analysis.ipynb` (reads/writes the Supabase warehouse directly — run Step 5 first)
 
-Processed data exports to `data/processed/`.
+Processed data exports to `data/processed/`. To populate the local MySQL warehouse, create a database and run `mysql -u root -p customer_revenue_intelligence < sql/schema_ddl.sql`, then `python scripts/ingest_to_mysql.py`.
 
-### Step 5 — Set up MySQL
+### Step 5 — Production track (Supabase + GitHub Actions)
 
-Create a database named `customer_revenue_intelligence` in MySQL 8.0 and run the schema:
+- Create a Supabase project and grab its connection string.
+- To run the pipeline **locally**: `python scripts/clean_data.py && python scripts/data_quality_gate.py && python scripts/load_to_supabase.py` — this ensures the schema, truncates, reloads, and recomputes RFM in SQL.
+- To run it as **automated CI**: fork/push to your own repo, add `DATABASE_URL` as a GitHub Actions repository secret (Settings → Secrets and variables → Actions), then either push a change to a pipeline file, trigger it manually from the Actions tab (`ETL Pipeline` → `Run workflow`), or wait for the Monday 03:00 UTC schedule.
 
-```bash
-mysql -u root -p customer_revenue_intelligence < sql/schema_ddl.sql
-```
+### Step 6 — Run the SQL query files
 
-### Step 6 — Ingest data to MySQL
+Execute `sql/rfm_queries.sql`, `sql/revenue_queries.sql`, `sql/cohort_queries.sql`, `sql/advanced_queries.sql` against the local MySQL warehouse in MySQL Workbench or CLI.
 
-Update connection credentials in `scripts/ingest_to_mysql.py`, then run:
+### Step 7 — Open the Power BI dashboard
 
-```bash
-python scripts/ingest_to_mysql.py
-```
-
-### Step 7 — Run SQL queries
-
-Execute queries in MySQL Workbench or CLI from the `sql/` directory.
-
-### Step 8 — Open Power BI Dashboard
-
-Open `dashboard/customer_revenue_intelligence.pbix` in Power BI Desktop. Update the MySQL data source connection if prompted.
+Open `dashboard/customer_revenue_intelligence.pbix` in Power BI Desktop. If reconnecting, point it at Supabase — try the native `PostgreSQL.Database` connector first; if you hit a TLS validation error, see the ODBC workaround in [Data Warehouse](#data-warehouse).
 
 ---
 
@@ -385,12 +489,21 @@ Open `dashboard/customer_revenue_intelligence.pbix` in Power BI Desktop. Update 
 ```
 CUSTOMER_REVENUE_INTELLIGENCE/
 │
+├── .github/
+│   └── workflows/
+│       └── etl_pipeline.yml
+│
 ├── dashboard/
 │   └── customer_revenue_intelligence.pbix
 │
 ├── data/
 │   ├── processed/
+│   │   ├── online_retail_clean.csv
+│   │   ├── guest_checkout.csv
+│   │   ├── cleaning_summary.json
+│   │   └── rfm_segments.csv
 │   └── raw/
+│       └── online_retail_II.xlsx
 │
 ├── notebooks/
 │   ├── 01_data_quality_audit.ipynb
@@ -399,25 +512,42 @@ CUSTOMER_REVENUE_INTELLIGENCE/
 │   ├── 04_cohort_analysis.ipynb
 │   ├── 05_revenue_trends.ipynb
 │   ├── 06_clv_analysis.ipynb
-│   └── 07_statistical_tests.ipynb
+│   ├── 07_statistical_tests.ipynb
+│   └── 08_survival_analysis.ipynb
 │
 ├── reports/
 │   └── figures/
 │       ├── dashboard_page1_executive_revenue_overview.png
 │       ├── dashboard_page2_customer_loyalty_rfm.png
 │       ├── dashboard_page3_retention_seasonal_trends.png
-│       └── dashboard_page4_executive_insights_roadmap.png
+│       ├── dashboard_page4_executive_insights_roadmap.png
+│       ├── pipeline_run_jobs.png
+│       ├── pipeline_run_history.png
+│       ├── survival_km_overall.png
+│       ├── survival_km_country.png
+│       ├── rfm_scatter.png / rfm_segment_analysis.png
+│       ├── cohort_retention_heatmap.png / cohort_retention_trend.png
+│       ├── clv_analysis.png
+│       ├── pareto_analysis.png
+│       └── monthly_revenue_trend.png
 │
 ├── scripts/
-│   └── ingest_to_mysql.py
+│   ├── clean_data.py           — cleaning waterfall, scripted for CI
+│   ├── data_quality_gate.py    — 17 automated PASS/FAIL checks
+│   ├── load_to_supabase.py     — schema + load + SQL RFM computation
+│   └── ingest_to_mysql.py      — local MySQL ingestion
 │
 ├── sql/
-│   ├── schema_ddl.sql
+│   ├── schema_ddl.sql              (MySQL — local)
+│   ├── schema_ddl_postgres.sql     (Postgres — Supabase)
+│   ├── survival_schema.sql         (Postgres — survival tables)
+│   ├── compute_rfm.sql             (Postgres — RFM via NTILE(5))
 │   ├── rfm_queries.sql
 │   ├── revenue_queries.sql
 │   ├── cohort_queries.sql
 │   └── advanced_queries.sql
 │
+├── .env.example
 ├── .gitignore
 ├── README.md
 └── requirements.txt
@@ -429,13 +559,17 @@ CUSTOMER_REVENUE_INTELLIGENCE/
 
 | Tool | Version | Purpose |
 |---|---|---|
-| Python | 3.10 | EDA, data cleaning, analysis, statistical testing |
-| Pandas | Latest | Data manipulation and transformation |
-| Matplotlib / Seaborn | Latest | Visualisation within notebooks |
-| SciPy | Latest | Statistical hypothesis testing (t-tests, chi-square) |
-| MySQL | 8.0 | Star schema database for structured querying |
-| SQLAlchemy | Latest | Python-to-MySQL data ingestion script |
-| Power BI Desktop | Latest | 4-page executive dashboard |
+| Python | 3.10 (local) / 3.11 (CI) | EDA, data cleaning, analysis, statistical testing, survival analysis |
+| Pandas | 2.2.2 | Data manipulation and transformation |
+| Matplotlib / Seaborn | 3.8.4 / 0.13.2 | Visualisation within notebooks |
+| SciPy | 1.13.0 | Statistical hypothesis testing (Welch's t-test, Shapiro-Wilk, Levene's, Mann-Whitney U, chi-square) |
+| lifelines | 0.30.3 | Survival analysis — Kaplan-Meier estimator, Cox Proportional Hazards |
+| MySQL | 8.0 | Local warehouse — SQL query practice/demonstration |
+| Supabase (Postgres) | — | Cloud-hosted production data warehouse, free tier |
+| SQLAlchemy | 2.0.30 | Python-to-database ingestion (MySQL and Postgres) |
+| psycopg2-binary | 2.9.9 | Postgres driver |
+| GitHub Actions | — | CI/CD orchestration — scheduled + manual + push-triggered ETL pipeline |
+| Power BI Desktop | Latest | 4-page executive dashboard; connects to Supabase via psqlODBC |
 | NovyPro | — | Live dashboard hosting |
 | GitHub | — | Version control |
 
@@ -451,4 +585,4 @@ MCA — Data Science | Dayananda Sagar University, Bangalore
 
 ---
 
-*This project uses historical CLV calculated from verified transaction records — not predictive modelling. The ingestion process uses a Python script, not an automated pipeline. All statistical results, including non-significant findings, are reported as observed.*
+*This project uses historical CLV calculated from verified transaction records — not predictive modelling. Data ingestion is a real automated pipeline: GitHub Actions cleans, quality-gates (17 automated checks), and loads data into a cloud Postgres warehouse on a weekly schedule, with every load idempotent and every failed check blocking production. Survival analysis models time-to-churn directly via Kaplan-Meier and Cox Proportional Hazards rather than a binary classifier, with its proportional-hazards assumption check and remediation reported honestly — including the one violation that couldn't be fully resolved. All statistical results, including non-significant findings, are reported as observed.*
