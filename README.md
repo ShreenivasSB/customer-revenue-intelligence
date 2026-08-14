@@ -5,11 +5,13 @@
 ![Supabase](https://img.shields.io/badge/Supabase-Postgres-3ECF8E?logo=supabase&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-CI%2FCD-2088FF?logo=githubactions&logoColor=white)
 ![Power BI](https://img.shields.io/badge/Power%20BI-Desktop-yellow?logo=powerbi&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-Community%20Cloud-FF4B4B?logo=streamlit&logoColor=white)
 ![GitHub](https://img.shields.io/badge/GitHub-Version%20Control-black?logo=github&logoColor=white)
 
-> **End-to-end customer analytics system** that processes 1M+ UK e-commerce transactions, segments 5,878 customers by revenue potential, models time-to-churn with survival analysis, and surfaces £982K in immediately recoverable revenue — delivered through an automated GitHub Actions pipeline into a cloud Postgres warehouse and a 4-page executive Power BI dashboard.
+> **End-to-end customer analytics system** that processes 1M+ UK e-commerce transactions, segments 5,878 customers by revenue potential, models time-to-churn with survival analysis, and surfaces £982K in immediately recoverable revenue — delivered through an automated GitHub Actions pipeline into a cloud Postgres warehouse, a 4-page executive Power BI dashboard, and an interactive Streamlit reporting app.
 
-📊 **[Live Dashboard → View on Power BI](https://app.powerbi.com/view?r=eyJrIjoiODBhZWIyMjUtMDk1NS00MjYyLThiM2MtMDEwYjI5MTVkYzIzIiwidCI6ImRiMTljMjFjLWFlODctNDY4Yi05MjQ4LTFhMjkyZDM3OWRjMiJ9)**
+📊 **[Executive Dashboard → View on Power BI](https://app.powerbi.com/view?r=eyJrIjoiODBhZWIyMjUtMDk1NS00MjYyLThiM2MtMDEwYjI5MTVkYzIzIiwidCI6ImRiMTljMjFjLWFlODctNDY4Yi05MjQ4LTFhMjkyZDM3OWRjMiJ9)**
+🖥️ **[Interactive Reporting App → Launch on Streamlit](https://zowhklizimdbzjpc2zaq7z.streamlit.app/)**
 
 ---
 
@@ -84,12 +86,18 @@ The project runs two parallel tracks from the same raw dataset: a **local explor
               │                                                     │
               └────────────────────────────┬────────────────────────┘
                                             ▼
-                           Power BI Desktop (ODBC → Supabase)
-                           4-page executive dashboard
+                            Supabase Postgres — production warehouse
                                             │
-                                            ▼
-                           Power BI Service — live hosted dashboard
+                          ┌─────────────────┴──────────────────┐
+                          ▼                                      ▼
+              Power BI Desktop (ODBC)              streamlit_app/ (SQLAlchemy/psycopg2)
+              4-page executive dashboard           6-page interactive reporting app
+                          │                                      │
+                          ▼                                      ▼
+              Power BI Service — hosted             Streamlit Community Cloud — hosted
 ```
+
+Both consumers read the *same* warehouse — no separate export, no data drift between them. Power BI is the fixed executive report; the Streamlit app is the ad-hoc, filterable, drill-down companion (see [Streamlit Reporting App](#streamlit-reporting-app) below).
 
 ---
 
@@ -373,6 +381,24 @@ Prioritised business recommendations with supporting data. Each recommendation i
 
 ---
 
+## 🖥️ Streamlit Reporting App
+
+Power BI is the fixed, 4-page executive report. `streamlit_app/` is its interactive companion — same Supabase warehouse, same numbers, but with filters, drill-downs, and an exportable target list that a static report can't offer. Framed deliberately as a **reporting/BI app, not a deployed ML product**: every figure is a live SQL aggregate, not a prediction served to a user — the one place the app touches a model output, the Cox risk score, it's just displaying and ranking by a number already computed and persisted in notebook 08, the same as any other warehouse column.
+
+**[Launch the live app →](https://zowhklizimdbzjpc2zaq7z.streamlit.app/)** (Streamlit Community Cloud, free tier)
+
+Six pages: Executive Overview, RFM Segmentation (customer-level scatter + segment drill-down table), Cohort Retention (interactive heatmap), Revenue & Seasonality (the same honest statistical validation table as above), Churn Risk (Kaplan-Meier curve re-fit live against the warehouse via `lifelines`, plus a downloadable, filterable retention-target-list CSV ranked by Cox partial hazard), and Recommendations (the six actions below, with their headline figures recomputed live rather than hard-coded).
+
+![Streamlit app — Executive Overview](reports/figures/streamlit_app_home.png)
+
+![Streamlit app — Churn Risk survival analysis](reports/figures/streamlit_app_churn_risk.png)
+
+**One honest discrepancy, surfaced in-app rather than hidden:** the app's RFM segment counts are computed live via SQL `NTILE(5)` (`sql/compute_rfm.sql`), while the README/Power BI numbers above come from the notebook's pandas `pd.qcut`. Both follow the identical rule waterfall and agree closely, but small per-segment differences are expected — `pd.qcut` and SQL `NTILE` break quantile ties differently. The app's RFM page states this explicitly instead of quietly showing a slightly different number with no explanation.
+
+**Deployment notes, worth knowing for a technical follow-up question:** the app has its own `requirements.txt` and `.streamlit/config.toml`, kept separate from the root notebook/pipeline `requirements.txt` so Community Cloud only installs what the app itself needs. `DATABASE_URL` is read from Streamlit's secrets manager (with a local `.env` fallback for development) — never committed. The first deploy attempt failed: Streamlit Cloud provisioned Python 3.14 by default, and neither `psycopg2-binary` nor `pandas` (at the versions pinned here) ship prebuilt wheels for it yet, so the build tried to compile both from source and failed. Fixed by pinning Python 3.11 via the app's Advanced Settings in the Streamlit Cloud dashboard — a repo-level `runtime.txt`/`.python-version` was tried first and silently ignored, since machine provisioning happens before the repo is even cloned.
+
+---
+
 ## 💡 Business Recommendations
 
 ### 1. Fix the One-Hit Wonder Problem — £174K Annual Upside
@@ -399,7 +425,7 @@ Champions (22.07% of customers, 1,297 people) generate 68.26% of revenue. Champi
 
 ### 6. Prioritise Retention Outreach by Cox Churn Risk Score, Not Just Recency
 
-The survival analysis's per-customer Cox partial hazard score (`survival_customer_features.cox_partial_hazard`) ranks all 5,878 customers by relative churn risk, driven overwhelmingly by order frequency (HR≈0.07, concordance 0.87) rather than recency alone. Recommendation #2 above targets customers already 342 days lapsed; this score identifies customers whose *ordering pattern* signals elevated risk before they cross that threshold — a genuinely earlier, more targeted retention trigger than a recency cutoff.
+The survival analysis's per-customer Cox partial hazard score (`survival_customer_features.cox_partial_hazard`) ranks all 5,878 customers by relative churn risk, driven overwhelmingly by order frequency (HR≈0.07, concordance 0.87) rather than recency alone. Recommendation #2 above targets customers already 342 days lapsed; this score identifies customers whose *ordering pattern* signals elevated risk before they cross that threshold — a genuinely earlier, more targeted retention trigger than a recency cutoff. The [Streamlit app's Churn Risk page](https://zowhklizimdbzjpc2zaq7z.streamlit.app/Churn_Risk) turns this straight into an exportable, filterable target list rather than leaving it as a table only a SQL query away.
 
 ---
 
@@ -482,6 +508,16 @@ Execute `sql/rfm_queries.sql`, `sql/revenue_queries.sql`, `sql/cohort_queries.sq
 
 Open `dashboard/customer_revenue_intelligence.pbix` in Power BI Desktop. If reconnecting, point it at Supabase — try the native `PostgreSQL.Database` connector first; if you hit a TLS validation error, see the ODBC workaround in [Data Warehouse](#data-warehouse).
 
+### Step 8 — Run the Streamlit app locally (optional)
+
+```bash
+cd streamlit_app
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Reads `DATABASE_URL` from the repo-root `.env` automatically (same variable as Step 3). To deploy your own copy on [Streamlit Community Cloud](https://share.streamlit.io): New app → this repo → branch `main` → main file path `streamlit_app/app.py` → add `DATABASE_URL` under App settings → Secrets. If the build fails trying to compile `psycopg2-binary`/`pandas` from source, set the Python version explicitly to 3.11 under the app's Advanced Settings — see the deployment note in [Streamlit Reporting App](#streamlit-reporting-app).
+
 ---
 
 ## 📁 Project Structure
@@ -529,13 +565,23 @@ CUSTOMER_REVENUE_INTELLIGENCE/
 │       ├── cohort_retention_heatmap.png / cohort_retention_trend.png
 │       ├── clv_analysis.png
 │       ├── pareto_analysis.png
-│       └── monthly_revenue_trend.png
+│       ├── monthly_revenue_trend.png
+│       ├── streamlit_app_home.png
+│       └── streamlit_app_churn_risk.png
 │
 ├── scripts/
 │   ├── clean_data.py           — cleaning waterfall, scripted for CI
 │   ├── data_quality_gate.py    — 17 automated PASS/FAIL checks
 │   ├── load_to_supabase.py     — schema + load + SQL RFM computation
 │   └── ingest_to_mysql.py      — local MySQL ingestion
+│
+├── streamlit_app/
+│   ├── app.py                  — Executive Overview (entrypoint)
+│   ├── pages/                  — RFM, Cohort, Revenue, Churn Risk, Recommendations
+│   ├── db.py                   — cached SQL query layer
+│   ├── theme.py / ui.py        — chart palette + shared UI components
+│   ├── requirements.txt        — app-only deps (kept separate from root)
+│   └── .streamlit/config.toml
 │
 ├── sql/
 │   ├── schema_ddl.sql              (MySQL — local)
@@ -571,6 +617,9 @@ CUSTOMER_REVENUE_INTELLIGENCE/
 | GitHub Actions | — | CI/CD orchestration — scheduled + manual + push-triggered ETL pipeline |
 | Power BI Desktop | Latest | 4-page executive dashboard; connects to Supabase via psqlODBC |
 | Power BI Service | — | Live dashboard hosting (publish to web) |
+| Streamlit | 1.54.0 | Interactive reporting app — filters, drill-downs, live SQL |
+| Plotly | 5.24.1 | Interactive charts within the Streamlit app |
+| Streamlit Community Cloud | — | Free-tier hosting for the reporting app |
 | GitHub | — | Version control |
 
 ---
@@ -585,4 +634,4 @@ MCA — Data Science | Dayananda Sagar University, Bangalore
 
 ---
 
-*This project uses historical CLV calculated from verified transaction records — not predictive modelling. Data ingestion is a real automated pipeline: GitHub Actions cleans, quality-gates (17 automated checks), and loads data into a cloud Postgres warehouse on a weekly schedule, with every load idempotent and every failed check blocking production. Survival analysis models time-to-churn directly via Kaplan-Meier and Cox Proportional Hazards rather than a binary classifier, with its proportional-hazards assumption check and remediation reported honestly — including the one violation that couldn't be fully resolved. All statistical results, including non-significant findings, are reported as observed.*
+*This project uses historical CLV calculated from verified transaction records — not predictive modelling. Data ingestion is a real automated pipeline: GitHub Actions cleans, quality-gates (17 automated checks), and loads data into a cloud Postgres warehouse on a weekly schedule, with every load idempotent and every failed check blocking production. Survival analysis models time-to-churn directly via Kaplan-Meier and Cox Proportional Hazards rather than a binary classifier, with its proportional-hazards assumption check and remediation reported honestly — including the one violation that couldn't be fully resolved. The Streamlit app is a reporting/BI layer on the same warehouse, not a deployed model — the one place it surfaces a model output (the Cox risk score), it displays and ranks a value already computed and persisted by the notebook, rather than serving live inference. All statistical results, including non-significant findings, are reported as observed.*
