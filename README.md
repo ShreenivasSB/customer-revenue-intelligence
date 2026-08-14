@@ -140,9 +140,9 @@ Historical CLV calculated per customer as the sum of all verified transactions i
 
 ### 4. Revenue Trend & Seasonal Analysis
 
-Monthly revenue aggregated and tested for Q4 vs non-Q4 differences using independent samples t-tests.
+Monthly revenue aggregated and tested for Q4 vs non-Q4 differences using Welch's t-test (unequal-variance correction), cross-checked with Mann-Whitney U.
 
-**Finding:** Q4 months generate 41.33% more revenue per month than non-Q4 months. This effect is statistically significant (p=0.003) and is driven entirely by transaction volume — not by customers spending more per order (AOV test: p=0.661, not significant). See Statistical Validation for the full honest accounting.
+**Finding:** Q4 months generate 41.33% more revenue per month than non-Q4 months in the observed data, but this does *not* hold up as statistically significant once tested correctly (Welch's p=0.052, Mann-Whitney U p=0.055) — Levene's test shows the two groups have unequal variance, which violates the assumption behind the simpler Student's t-test originally used here (which had misleadingly reported p=0.003). With only 25 months of data (7 Q4, 18 non-Q4), we can't statistically rule out that this gap is due to chance, even though the observed effect is real. Order size is unaffected either way (AOV test: p=0.697, not significant). See Statistical Validation for the full honest accounting.
 
 ### 5. Geographic Revenue Analysis
 
@@ -172,17 +172,19 @@ Products ranked by total revenue contribution; Pareto threshold identified.
 
 ## 📐 Statistical Validation
 
-All five tests conducted in `notebooks/07_statistical_tests.ipynb` using SciPy.
+All five tests conducted in `notebooks/07_statistical_tests.ipynb` using SciPy. Every two-group comparison uses **Welch's t-test** (does not assume equal variance) rather than Student's t-test, backed by Shapiro-Wilk normality checks and Levene's variance-equality checks on each pair, and cross-checked against **Mann-Whitney U** (a nonparametric test with no distributional assumptions). Normality was violated in every comparison — retail transaction data is heavily right-skewed, not normal — but Welch's t-test and Mann-Whitney U agreed on every verdict, which is real evidence the significant/not-significant calls are robust despite that violation.
 
-| Test | Variables | Result | p-value | Interpretation |
-|---|---|---|---|---|
-| Independent t-test | Champion vs Non-Champion revenue | **SIGNIFICANT** | p~0.000 | Champions are statistically distinct as a revenue group |
-| Independent t-test | UK vs Non-UK order value | **SIGNIFICANT** | p~0.000 | Non-UK customers spend £441 more per order — not random variation |
-| Chi-Square | RFM segment distribution | **SIGNIFICANT** | p~0.000 | Segment sizes are not randomly distributed |
-| Independent t-test | Q4 vs Non-Q4 monthly revenue volume | **SIGNIFICANT** | p=0.003 | Q4 revenue uplift is real |
-| Independent t-test | Q4 vs Non-Q4 AOV (order size) | **NOT SIGNIFICANT** | p=0.661 | Q4 lift is volume-driven, not spend-per-order-driven |
+| Test | Variables | Result | Welch's p | Mann-Whitney p | Interpretation |
+|---|---|---|---|---|---|
+| Welch's t-test | Champion vs Non-Champion revenue | **SIGNIFICANT** | p<0.0001 | p<0.0001 | Champions are statistically distinct as a revenue group |
+| Welch's t-test | UK vs Non-UK order value | **SIGNIFICANT** | p<0.0001 | p<0.0001 | Non-UK customers spend £441 more per order — not random variation |
+| Chi-Square | RFM segment distribution | **SIGNIFICANT** | p~0.000 | n/a | Segment sizes are not randomly distributed |
+| Welch's t-test | Q4 vs Non-Q4 monthly revenue volume | **NOT SIGNIFICANT** | p=0.052 | p=0.055 | Levene's test shows unequal variance between groups — Student's t-test (originally used) wrongly reported this as significant (p=0.003); with only 25 months of data, the observed 41.33% Q4 uplift can't be statistically distinguished from chance |
+| Welch's t-test | Q4 vs Non-Q4 AOV (order size) | **NOT SIGNIFICANT** | p=0.697 | p=0.336 | Q4 lift (where real) is volume-driven, not spend-per-order-driven |
 
-The Q4 AOV result is reported as-is. The business interpretation is important: Q4 success comes from more customers buying, not from the same customers spending more. Marketing strategy for Q4 should therefore focus on acquisition and traffic volume, not upselling.
+Two honest results worth calling out explicitly:
+- **Q4 AOV** is reported as not significant either way — the business interpretation holds regardless: Q4 success (where it exists) comes from more customers buying, not from the same customers spending more.
+- **Q4 monthly revenue volume** changed verdict under the corrected test — this is the one place where fixing the statistical methodology actually changed the conclusion, not just its confidence. The original notebook used Student's t-test, which assumes equal variance between groups; Levene's test shows that assumption doesn't hold here, so its p=0.003 significant result wasn't trustworthy. Welch's t-test corrects for that and lands at p=0.052 — just above the conventional 0.05 threshold. The 41.33% observed Q4 premium is real in this dataset, but statistically we can't rule out it's due to chance with only 7 Q4 months to compare against 18 non-Q4 months.
 
 ---
 
@@ -278,9 +280,9 @@ Prioritised business recommendations with supporting data. Each recommendation i
 
 223 customers classified as At Risk have not purchased in an average of 342 days. They collectively represent £982,122 in historical revenue. Their most-purchased product — WHITE HANGING HEART T-LIGHT HOLDER (bought by 105 of 223 At Risk customers) — is the recommended lead product for a targeted re-engagement campaign. A 20% recovery rate alone secures £196,424 in immediate revenue.
 
-### 3. Capitalise on the Q4 Seasonal Peak — Maximum Inventory & Acquisition Spend
+### 3. Prepare for the Observed Q4 Seasonal Pattern — Inventory & Acquisition Spend
 
-Q4 monthly revenue is 41.33% higher than non-Q4 months (p=0.003). This effect is volume-driven: more customers, not higher spend per order. Ad spend should scale from late September. Stock replenishment, particularly for high-volume low-cost items, should complete by October 1 to prevent fulfilment failure at peak.
+Q4 monthly revenue was 41.33% higher than non-Q4 months in both years of this dataset — but with only 25 months of data, this doesn't clear the bar for statistical significance (Welch's p=0.052; see Statistical Validation). Where a Q4 lift does occur, it's volume-driven, not AOV-driven (more customers, not higher spend per order — this part *is* statistically confirmed, p=0.697). Given the pattern repeated in both observed years even without formal statistical proof, scaling ad spend from late September and completing stock replenishment by October 1 remains a reasonable operational precaution — but it should be treated as a well-supported working assumption, not a statistically guaranteed fact, until more years of data are available.
 
 ### 4. Protect the 1,297 Champions — £11.86M Revenue at Stake
 
@@ -302,7 +304,7 @@ Champions (22.07% of customers, 1,297 people) generate 68.26% of revenue. Champi
 - **79% of customers** never return after their first purchase
 - **Average Month 1 retention: 21.16%** across all 25 cohorts analysed
 - **Best cohort retention: 35.29%** (December 2009) — **Worst: 9.21%** (December 2010)
-- **Q4 monthly revenue is 41.33% higher** than non-Q4 (p=0.003) — but AOV difference is not significant (p=0.661), confirming this is a volume effect
+- **Q4 monthly revenue was 41.33% higher** than non-Q4 in the observed data — but not statistically significant with only 25 months available (Welch's p=0.052); AOV difference is not significant either (p=0.697), so where a Q4 effect exists it's volume-driven, not spend-per-order-driven
 - **Champion avg CLV: £9,144** vs **Lost avg CLV: £244** — a **37.5x difference**
 - **Non-UK customers place £441 larger orders** than UK customers (p~0.000)
 - **21.43% of products** generate **80% of revenue** — product-level Pareto confirmed
